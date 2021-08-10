@@ -26,7 +26,7 @@ async function scrapeInfiniteScrollItems(
         let previousHeight;
         while (items.length < itemTargetCount) {
             await page.evaluate(() => {
-                document.querySelectorAll('button.js-add-kudo').forEach(node => node.click())
+                document.querySelectorAll('button.Button--btn--1UWRP.Button--default--33OIF.KudosAndComments--social-button--1QAOS').forEach(node => node.click())
             });
             console.log('Giving kudos for page %d', counter)
             console.log('items.length = %d, itemTargetCount = %d', items.length, itemTargetCount);
@@ -43,6 +43,9 @@ async function scrapeInfiniteScrollItems(
 
 
 (async () => {
+    //Debug in MacOS, uncomment
+    //const browser = await puppeteer.launch({ executablePath: '/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome', headless: false});
+    //Prod
     const browser = await puppeteer.launch({ headless: true});
     console.log('Opening browser')
     const page = await browser.newPage();
