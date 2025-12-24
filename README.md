@@ -19,7 +19,11 @@ This Python script automates the process of giving kudos to activities on your S
 1.  **Clone the repository** (or download the files):
     ```bash
     git clone https://github.com/herrsergio/strava-kudos
+<<<<<<< HEAD
     cd strava-kudos
+=======
+    cd python-strava-kudos
+>>>>>>> b455b14 (Fix README)
     ```
 
 2.  **Create a virtual environment** (recommended):
