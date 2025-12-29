@@ -1,4 +1,5 @@
 import os
+import argparse
 import time
 import random
 from playwright.sync_api import sync_playwright, TimeoutError
@@ -261,10 +262,16 @@ def give_kudos(page):
     print(f"Finished! Gave {kudos_given} new kudos.")
 
 def main():
+    parser = argparse.ArgumentParser(description="Strava Kudos Script")
+    parser.add_argument("--headless", action="store_true", help="Run in headless mode")
+    args = parser.parse_args()
+
     with sync_playwright() as p:
         # Launch browser (headless=False for debugging/visibility as requested)
-        browser = p.chromium.launch(headless=False)
-        context = browser.new_context()
+        browser = p.chromium.launch(headless=args.headless)
+        context = browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        )
         page = context.new_page()
 
         # Debug: Listen for console logs immediately

@@ -6,6 +6,7 @@ This Python script automates the process of giving kudos to activities on your S
 
 -   **Automated Login**: Securely logs in using credentials stored in an environment file.
 -   **Stealth Mode**: Uses `playwright-stealth` to evade basic bot detection.
+-   **Headless Support**: Option to run in background (headless) or visible mode.
 -   **Smart Interaction**: Handles cookie banners, scrolls through the feed, and intelligently clicks "Kudos" buttons only on activities you haven't already liked.
 -   **Debug Support**: Captures screenshots and HTML dumps if errors occur to help with troubleshooting.
 
@@ -57,6 +58,14 @@ Run the main script:
 
 ```bash
 python main.py
+```
+
+By default, the script runs in **visible mode** (browser window opens) so you can see what's valid.
+
+To run in **headless mode** (background execution), use the `--headless` flag:
+
+```bash
+python main.py --headless
 ```
 
 The script will:
