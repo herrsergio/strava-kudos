@@ -1,5 +1,7 @@
 import os
 import argparse
+import logging
+import sys
 import time
 import random
 from playwright.sync_api import sync_playwright, TimeoutError
@@ -12,12 +14,29 @@ load_dotenv()
 EMAIL = os.getenv("STRAVA_EMAIL")
 PASSWORD = os.getenv("STRAVA_PASSWORD")
 
-if not EMAIL or not PASSWORD:
-    print("Error: STRAVA_EMAIL and STRAVA_PASSWORD must be set in .env file.")
-    exit(1)
+
+def setup_logging(log_file):
+    # Create a custom logger
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+
+    # Create formatters and add it to handlers
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+
+    # Create handler for file
+    file_handler = logging.FileHandler(log_file)
+    file_handler.setLevel(logging.INFO)
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+
+    # Create handler for console (stream)
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
 
 def login(page):
-    print("Navigating to Strava login page...")
+    logging.info("Navigating to Strava login page...")
     page.goto("https://www.strava.com/login")
     
     # Apply stealth to avoid bot detection
@@ -33,24 +52,24 @@ def login(page):
     # This is more robust than add_locator_handler which can get stuck waiting for the element to hide
     def handle_cookie_banner(page):
         time.sleep(2)
-        print("Checking for cookie banner...")
+        logging.info("Checking for cookie banner...")
         try:
             # Strava often uses a "Accept All" button in a modal
             # Selectors based on common cookie banner text
             cookie_btn = page.locator("button:has-text('Accept All'), button:has-text('Accept Cookies'), #onetrust-accept-btn-handler, #CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll")
             if cookie_btn.count() > 0 and cookie_btn.first.is_visible(timeout=2000):
-                print(f"Cookie banner detected. Accepting...")
+                logging.info(f"Cookie banner detected. Accepting...")
                 cookie_btn.first.click()
-                print("Cookie banner accepted.")
+                logging.info("Cookie banner accepted.")
                 time.sleep(1) # Wait for banner to disappear
             else:
-                print("No cookie banner found or already accepted.")
+                logging.info("No cookie banner found or already accepted.")
         except Exception as e:
-            print(f"Cookie banner check skipped or failed: {e}")
+            logging.info(f"Cookie banner check skipped or failed: {e}")
 
     handle_cookie_banner(page)
 
-    print("Filling email...")
+    logging.info("Filling email...")
     # Wait for email field
     # Strava login page often has two email fields (desktop/mobile), we need the visible one
     email_selector = "input[name='email']:visible" 
@@ -62,12 +81,12 @@ def login(page):
     # Use press_sequentially for reliable typing
     email_field.press_sequentially(EMAIL, delay=100)
     
-    print("Email field filled.")
+    logging.info("Email field filled.")
     
-    print("Waiting before submitting...")
+    logging.info("Waiting before submitting...")
     time.sleep(1)
     
-    print("Pressing Enter to submit email...")
+    logging.info("Pressing Enter to submit email...")
     page.keyboard.press("Enter")
 
     # Check for "Unexpected error" which often happens with bots
@@ -77,13 +96,13 @@ def login(page):
         pass
         
     if "An unexpected error occurred. Please try again." in page.locator("body").text_content():
-        print("CRITICAL: 'Unexpected error' detected on page!")
+        logging.error("CRITICAL: 'Unexpected error' detected on page!")
         page.screenshot(path="error_page.png")
         with open("error_page.html", "w") as f:
             f.write(page.content())
         
         # Retry logic: refresh and try again
-        print("Refreshing and retrying...")
+        logging.info("Refreshing and retrying...")
         page.reload()
         page.wait_for_load_state("domcontentloaded")
         
@@ -92,25 +111,25 @@ def login(page):
         email_input.press_sequentially(EMAIL, delay=100)
             
         time.sleep(1)
-        print("Pressing Enter to submit email...")
+        logging.info("Pressing Enter to submit email...")
         page.keyboard.press("Enter")
 
     # Wait for "Use password instead" button
-    print("Waiting for 'Use password instead' button...")
+    logging.info("Waiting for 'Use password instead' button...")
     try:
         # Wait up to 10 seconds for the button to appear
         # Use :visible to ensure we don't pick up hidden mobile buttons
         password_choice_btn = page.locator("button:has-text('Use password instead'):visible, button:has-text('Log in with password'):visible")
         password_choice_btn.first.wait_for(state="visible", timeout=10000)
-        print("Found 'Use password instead' button. Clicking...")
+        logging.info("Found 'Use password instead' button. Clicking...")
         time.sleep(random.uniform(1.0, 2.0))
         password_choice_btn.first.click()
         # Removed wait_for_load_state("networkidle") as it causes unnecessary timeouts
     except Exception as e:
-        print(f"'Use password instead' button not found or timed out: {e}")
-        print("Checking if we are already on the password screen...")
+        logging.info(f"'Use password instead' button not found or timed out: {e}")
+        logging.info("Checking if we are already on the password screen...")
 
-    print("Waiting for password field...")
+    logging.info("Waiting for password field...")
     # Use a more specific selector for the password input on the password page
     # The previous page might still be in DOM, so we ensure we get the visible one
     password_selector = "input[name='password']:visible"
@@ -118,7 +137,7 @@ def login(page):
         time.sleep(2)
         page.wait_for_selector(password_selector, timeout=10000)
         
-        print("Filling password...")
+        logging.info("Filling password...")
         # Human-like typing for password
         password_field = page.locator(password_selector)
         password_field.click()
@@ -133,13 +152,13 @@ def login(page):
         page.mouse.move(random.randint(0, 500), random.randint(0, 500))
         time.sleep(random.uniform(0.5, 1.0))
         
-        print("Logging in...")
+        logging.info("Logging in...")
         # The login button on the password page is usually type="submit"
         submit_btn = page.locator("button[type='submit']:visible")
         
         # Check if enabled
         if not submit_btn.is_enabled():
-            print("Submit button disabled. Trying to enable it...")
+            logging.info("Submit button disabled. Trying to enable it...")
             page.keyboard.press("Tab")
             time.sleep(1)
             page.keyboard.press("Enter")
@@ -158,7 +177,7 @@ def login(page):
             error_msg = page.locator("#flashMessage")
             if error_msg.is_visible():
                 text = error_msg.text_content()
-                print(f"Login failed with error: {text}")
+                logging.error(f"Login failed with error: {text}")
         except Exception:
             pass
 
@@ -166,21 +185,21 @@ def login(page):
         try:
             page.wait_for_url("**/dashboard", timeout=20000, wait_until="domcontentloaded")
         except Exception:
-            print("Warning: Login navigation timed out. Checking if we are on dashboard...")
+            logging.warning("Warning: Login navigation timed out. Checking if we are on dashboard...")
             if "Dashboard" in page.title():
-                print("We are on the dashboard. Proceeding.")
+                logging.info("We are on the dashboard. Proceeding.")
             else:
                 raise
 
-        print("Successfully logged in!")
+        logging.info("Successfully logged in!")
         
         try:
             # Debug: Listen for console logs - Moved to main()
             
-            print(f"User Agent: {page.evaluate('navigator.userAgent')}")
+            logging.info(f"User Agent: {page.evaluate('navigator.userAgent')}")
 
             # Wait for the feed to load
-            print("Waiting for feed container...")
+            logging.info("Waiting for feed container...")
             page.wait_for_load_state("networkidle", timeout=15000)
             page.wait_for_selector(".dashboard-mfe", timeout=15000)
             # Wait a bit more for React to hydrate
@@ -189,27 +208,27 @@ def login(page):
             # Check if the feed container has content
             feed_html = page.inner_html(".dashboard-mfe")
             if not feed_html.strip():
-                print("CRITICAL: .dashboard-mfe is empty! React failed to render.")
+                logging.error("CRITICAL: .dashboard-mfe is empty! React failed to render.")
             
             page.wait_for_selector('button[data-testid="kudos_button"]', timeout=15000)
         except Exception as e:
-            print(f"Warning: Feed might not have loaded correctly: {e}")
+            logging.warning(f"Warning: Feed might not have loaded correctly: {e}")
             with open("feed_load_fail.html", "w", encoding="utf-8") as f:
                 f.write(page.content())
 
     except TimeoutError:
-        print("Password field not found or login failed. Dumping page content.")
+        logging.error("Password field not found or login failed. Dumping page content.")
         with open("debug_page.html", "w", encoding="utf-8") as f:
             f.write(page.content())
         page.screenshot(path="login_failed.png")
         raise
     except Exception as e:
-        print(f"An error occurred during password submission: {e}")
+        logging.error(f"An error occurred during password submission: {e}")
         page.screenshot(path="login_error.png")
         raise
 
 def give_kudos(page):
-    print("Scanning feed for activities...")
+    logging.info("Scanning feed for activities...")
     # Scroll down a bit to load more activities
     time.sleep(2)
     for _ in range(3):
@@ -230,10 +249,10 @@ def give_kudos(page):
     # If it has        # Re-query buttons after scroll
     kudos_buttons = page.locator('button[data-testid="kudos_button"]')
     count = kudos_buttons.count()
-    print(f"Found {count} potential kudos buttons on page.")
+    logging.info(f"Found {count} potential kudos buttons on page.")
     
     if count == 0:
-        print("Warning: No kudos buttons found. Dumping page to empty_feed_debug.html")
+        logging.warning("Warning: No kudos buttons found. Dumping page to empty_feed_debug.html")
         with open("empty_feed_debug.html", "w", encoding="utf-8") as f:
             f.write(page.content())
     
@@ -244,7 +263,7 @@ def give_kudos(page):
             # Check if already given (look for filled icon inside or class on button)
             # This is a heuristic; might need adjustment based on actual DOM
             if "fill-orange" in button.inner_html():
-                print(f"Activity {i+1}: Kudos already given.")
+                logging.info(f"Activity {i+1}: Kudos already given.")
                 continue
             
             # Scroll into view
@@ -252,19 +271,22 @@ def give_kudos(page):
             time.sleep(random.uniform(0.5, 1.0))
             
             button.click()
-            print(f"Activity {i+1}: Gave kudos!")
+            logging.info(f"Activity {i+1}: Gave kudos!")
             kudos_given += 1
             time.sleep(random.uniform(0.5, 1.5)) # Random delay between clicks
             
         except Exception as e:
-            print(f"Error giving kudos to activity {i+1}: {e}")
+            logging.error(f"Error giving kudos to activity {i+1}: {e}")
 
-    print(f"Finished! Gave {kudos_given} new kudos.")
+    logging.info(f"Finished! Gave {kudos_given} new kudos.")
 
 def main():
     parser = argparse.ArgumentParser(description="Strava Kudos Script")
     parser.add_argument("--headless", action="store_true", help="Run in headless mode")
+    parser.add_argument("--log-file", default="strava_kudos.log", help="Path to the log file (default: strava_kudos.log)")
     args = parser.parse_args()
+
+    setup_logging(args.log_file)
 
     with sync_playwright() as p:
         # Launch browser (headless=False for debugging/visibility as requested)
@@ -275,7 +297,7 @@ def main():
         page = context.new_page()
 
         # Debug: Listen for console logs immediately
-        page.on("console", lambda msg: print(f"CONSOLE: {msg.text}"))
+        page.on("console", lambda msg: logging.debug(f"CONSOLE: {msg.text}"))
 
         try:
             login(page)
@@ -285,7 +307,7 @@ def main():
             time.sleep(2)
             
         except Exception as e:
-            print(f"An error occurred: {e}")
+            logging.error(f"An error occurred: {e}")
             page.screenshot(path="error.png")
         finally:
             browser.close()
