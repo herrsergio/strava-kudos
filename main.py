@@ -67,6 +67,7 @@ def login(page):
         except Exception as e:
             logging.info(f"Cookie banner check skipped or failed: {e}")
 
+    time.sleep(2)
     handle_cookie_banner(page)
 
     logging.info("Filling email...")
@@ -84,7 +85,7 @@ def login(page):
     logging.info("Email field filled.")
     
     logging.info("Waiting before submitting...")
-    time.sleep(1)
+    time.sleep(2)
     
     logging.info("Pressing Enter to submit email...")
     page.keyboard.press("Enter")
@@ -110,7 +111,7 @@ def login(page):
         email_input.click()
         email_input.press_sequentially(EMAIL, delay=100)
             
-        time.sleep(1)
+        time.sleep(2)
         logging.info("Pressing Enter to submit email...")
         page.keyboard.press("Enter")
 
@@ -160,7 +161,7 @@ def login(page):
         if not submit_btn.is_enabled():
             logging.info("Submit button disabled. Trying to enable it...")
             page.keyboard.press("Tab")
-            time.sleep(1)
+            time.sleep(2)
             page.keyboard.press("Enter")
         else:
             # Move mouse to button before clicking
