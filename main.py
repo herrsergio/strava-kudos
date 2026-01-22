@@ -70,50 +70,64 @@ def login(page):
     time.sleep(2)
     handle_cookie_banner(page)
 
-    logging.info("Filling email...")
-    # Wait for email field
-    # Strava login page often has two email fields (desktop/mobile), we need the visible one
-    email_selector = "input[name='email']:visible" 
-    page.wait_for_selector(email_selector)
-    
-    # Human-like typing for email
-    email_field = page.locator(email_selector)
-    email_field.click()
-    # Use press_sequentially for reliable typing
-    email_field.press_sequentially(EMAIL, delay=100)
-    
-    logging.info("Email field filled.")
-    
-    logging.info("Waiting before submitting...")
-    time.sleep(2)
-    
-    logging.info("Pressing Enter to submit email...")
-    page.keyboard.press("Enter")
+    # Email submission loop with retries
+    max_retries = 3
+    for attempt in range(max_retries):
+        logging.info(f"Email submission attempt {attempt + 1}/{max_retries}")
+        
+        logging.info("Filling email...")
+        # Wait for email field
+        # Strava login page often has two email fields (desktop/mobile), we need the visible one
+        email_selector = "input[name='email']:visible" 
+        try:
+            page.wait_for_selector(email_selector, timeout=5000)
+        except Exception:
+            logging.warning("Email selector not found immediately, trying to recover or just continuing...")
+        
+        # Human-like typing for email
+        try:
+            logging.info("Waiting before submitting...")
+            time.sleep(2)
+            email_field = page.locator(email_selector)
+            email_field.click()
+            # Clear field just in case it is a retry and something is there (though page reload usually clears it)
+            email_field.clear()
+            # Use press_sequentially for reliable typing
+            email_field.press_sequentially(EMAIL, delay=100)
+            logging.info("Email field filled.")
+        except Exception as e:
+            logging.error(f"Error interacting with email field: {e}")
 
-    # Check for "Unexpected error" which often happens with bots
-    try:
-        page.wait_for_load_state("networkidle", timeout=3000)
-    except:
-        pass
-        
-    if "An unexpected error occurred. Please try again." in page.locator("body").text_content():
-        logging.error("CRITICAL: 'Unexpected error' detected on page!")
-        page.screenshot(path="error_page.png")
-        with open("error_page.html", "w") as f:
-            f.write(page.content())
-        
-        # Retry logic: refresh and try again
-        logging.info("Refreshing and retrying...")
-        page.reload()
-        page.wait_for_load_state("domcontentloaded")
-        
-        email_input = page.locator("input[name='email']:visible")
-        email_input.click()
-        email_input.press_sequentially(EMAIL, delay=100)
-            
+        logging.info("Waiting before submitting...")
         time.sleep(2)
+        
         logging.info("Pressing Enter to submit email...")
         page.keyboard.press("Enter")
+
+        # Check for "Unexpected error" which often happens with bots
+        try:
+            page.wait_for_load_state("networkidle", timeout=3000)
+        except:
+            pass
+            
+        # Check if error message is present
+        if "An unexpected error occurred. Please try again." in page.locator("body").text_content():
+            logging.error(f"CRITICAL: 'Unexpected error' detected on attempt {attempt + 1}!")
+            page.screenshot(path=f"error_page_attempt_{attempt + 1}.png")
+            
+            if attempt < max_retries - 1:
+                # Retry logic: refresh and try again
+                logging.info("Refreshing and retrying...")
+                page.reload()
+                page.wait_for_load_state("domcontentloaded")
+                time.sleep(2)
+                handle_cookie_banner(page)
+                continue
+            else:
+                logging.error("Max retries reached for email submission.")
+        else:
+            logging.info("Email submitted successfully (no known error detected).")
+            break
 
     # Wait for "Use password instead" button
     logging.info("Waiting for 'Use password instead' button...")
