@@ -35,14 +35,14 @@ def setup_logging(log_file):
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
 
-def login(page):
-    logging.info("Navigating to Strava login page...")
+def login(page, retry_count=0):
+    logging.info(f"Navigating to Strava login page... (Retry count: {retry_count})")
     page.goto("https://www.strava.com/login")
-    
+
     # Apply stealth to avoid bot detection
     stealth = Stealth(media_codecs=False) # Disable specific codec evasion if it causes issues, but keep others
     stealth.apply_stealth_sync(page)
-    
+
     # Block media resources to prevent video player crash (TypeError: setMuted)
     page.route("**/*.{mp4,webm,mp3,wav,ogg}", lambda route: route.fulfill(status=200, body=b""))
 
@@ -74,16 +74,16 @@ def login(page):
     max_retries = 3
     for attempt in range(max_retries):
         logging.info(f"Email submission attempt {attempt + 1}/{max_retries}")
-        
+
         logging.info("Filling email...")
         # Wait for email field
         # Strava login page often has two email fields (desktop/mobile), we need the visible one
-        email_selector = "input[name='email']:visible" 
+        email_selector = "input[name='email']:visible"
         try:
             page.wait_for_selector(email_selector, timeout=5000)
         except Exception:
             logging.warning("Email selector not found immediately, trying to recover or just continuing...")
-        
+
         # Human-like typing for email
         try:
             logging.info("Waiting before submitting...")
@@ -100,7 +100,7 @@ def login(page):
 
         logging.info("Waiting before submitting...")
         time.sleep(2)
-        
+
         logging.info("Pressing Enter to submit email...")
         page.keyboard.press("Enter")
 
@@ -109,12 +109,12 @@ def login(page):
             page.wait_for_load_state("networkidle", timeout=3000)
         except:
             pass
-            
+
         # Check if error message is present
         if "An unexpected error occurred. Please try again." in page.locator("body").text_content():
             logging.error(f"CRITICAL: 'Unexpected error' detected on attempt {attempt + 1}!")
             page.screenshot(path=f"error_page_attempt_{attempt + 1}.png")
-            
+
             if attempt < max_retries - 1:
                 # Retry logic: refresh and try again
                 logging.info("Refreshing and retrying...")
@@ -151,26 +151,26 @@ def login(page):
     try:
         time.sleep(2)
         page.wait_for_selector(password_selector, timeout=10000)
-        
+
         logging.info("Filling password...")
         # Human-like typing for password
         password_field = page.locator(password_selector)
         password_field.click()
         password_field.press_sequentially(PASSWORD, delay=100)
-        
+
         # Trigger input events to ensure the form detects the value
         page.locator(password_selector).dispatch_event("input")
         page.locator(password_selector).dispatch_event("change")
-        
+
         # Random delay and mouse movement
         time.sleep(random.uniform(1.0, 2.0))
         page.mouse.move(random.randint(0, 500), random.randint(0, 500))
         time.sleep(random.uniform(0.5, 1.0))
-        
+
         logging.info("Logging in...")
         # The login button on the password page is usually type="submit"
         submit_btn = page.locator("button[type='submit']:visible")
-        
+
         # Check if enabled
         if not submit_btn.is_enabled():
             logging.info("Submit button disabled. Trying to enable it...")
@@ -186,9 +186,24 @@ def login(page):
             submit_btn.click()
 
         # Check for immediate error after submission
+        # Wait a bit for server response
+        time.sleep(2)
+
         try:
-            # Wait a bit for server response
-            time.sleep(2)
+            # Check for specific "Unexpected error" that redirects to email page
+            if "An unexpected error occurred. Please try again." in page.locator("body").text_content():
+                logging.error("CRITICAL: 'Unexpected error' detected after password submission.")
+                if retry_count < 3:
+                    logging.info(f"Retrying full login sequence (Retry {retry_count + 1})...")
+                    return login(page, retry_count=retry_count + 1)
+                else:
+                    raise Exception("Max retries reached for unexpected login error.")
+        except Exception as e:
+            if "Max retries reached" in str(e):
+                raise e
+            pass
+
+        try:
             error_msg = page.locator("#flashMessage")
             if error_msg.is_visible():
                 text = error_msg.text_content()
@@ -207,10 +222,10 @@ def login(page):
                 raise
 
         logging.info("Successfully logged in!")
-        
+
         try:
             # Debug: Listen for console logs - Moved to main()
-            
+
             logging.info(f"User Agent: {page.evaluate('navigator.userAgent')}")
 
             # Wait for the feed to load
@@ -219,12 +234,12 @@ def login(page):
             page.wait_for_selector(".dashboard-mfe", timeout=15000)
             # Wait a bit more for React to hydrate
             time.sleep(5)
-            
+
             # Check if the feed container has content
             feed_html = page.inner_html(".dashboard-mfe")
             if not feed_html.strip():
                 logging.error("CRITICAL: .dashboard-mfe is empty! React failed to render.")
-            
+
             page.wait_for_selector('button[data-testid="kudos_button"]', timeout=15000)
         except Exception as e:
             logging.warning(f"Warning: Feed might not have loaded correctly: {e}")
@@ -251,26 +266,26 @@ def give_kudos(page):
         time.sleep(random.uniform(1.0, 2.0))
 
     # Select all unclicked kudos buttons
-    # Note: Selectors might change, need to be robust. 
+    # Note: Selectors might change, need to be robust.
     # Usually buttons with 'fill-orange-brand' are already clicked (or similar class).
     # Unclicked often have a specific test-id or class.
     # Strava uses SVG icons for kudos.
-    
+
     # Strategy: Look for buttons that are "kudos" buttons and not yet filled.
     # This selector targets the button that contains the empty kudos icon.
     # Adjust selector based on inspection if needed.
-    
+
     # Common selector for kudos button: [data-testid="kudos_button"]
     # If it has        # Re-query buttons after scroll
     kudos_buttons = page.locator('button[data-testid="kudos_button"]')
     count = kudos_buttons.count()
     logging.info(f"Found {count} potential kudos buttons on page.")
-    
+
     if count == 0:
         logging.warning("Warning: No kudos buttons found. Dumping page to empty_feed_debug.html")
         with open("empty_feed_debug.html", "w", encoding="utf-8") as f:
             f.write(page.content())
-    
+
     kudos_given = 0
     for i in range(count):
         button = kudos_buttons.nth(i)
@@ -280,16 +295,16 @@ def give_kudos(page):
             if "fill-orange" in button.inner_html():
                 logging.info(f"Activity {i+1}: Kudos already given.")
                 continue
-            
+
             # Scroll into view
             button.scroll_into_view_if_needed()
             time.sleep(random.uniform(0.5, 1.0))
-            
+
             button.click()
             logging.info(f"Activity {i+1}: Gave kudos!")
             kudos_given += 1
             time.sleep(random.uniform(0.5, 1.5)) # Random delay between clicks
-            
+
         except Exception as e:
             logging.error(f"Error giving kudos to activity {i+1}: {e}")
 
@@ -305,7 +320,7 @@ def main():
 
     with sync_playwright() as p:
         # Launch browser (headless=False for debugging/visibility as requested)
-        browser = p.chromium.launch(headless=args.headless)
+        browser = p.chromium.launch(headless=args.headless, args=["--enable-unsafe-swiftshader"])
         context = browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         )
@@ -317,10 +332,10 @@ def main():
         try:
             login(page)
             give_kudos(page)
-            
+
             # Keep browser open for a moment to see results
             time.sleep(2)
-            
+
         except Exception as e:
             logging.error(f"An error occurred: {e}")
             page.screenshot(path="error.png")
