@@ -17,3 +17,5 @@ env/
 
 # Unused files
 *.py.*
+
+state.json
