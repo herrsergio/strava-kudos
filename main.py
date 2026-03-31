@@ -37,11 +37,26 @@ def setup_logging(log_file):
 
 def login(page, retry_count=0):
     logging.info(f"Navigating to Strava login page... (Retry count: {retry_count})")
+    
+    # Debug: Check webdriver property to verify stealth
+    try:
+        is_webdriver = page.evaluate("navigator.webdriver")
+        logging.info(f"navigator.webdriver: {is_webdriver}")
+    except Exception as e:
+        logging.warning(f"Could not check navigator.webdriver: {e}")
+
     page.goto("https://www.strava.com/login")
 
     # Apply stealth to avoid bot detection
     stealth = Stealth(media_codecs=False) # Disable specific codec evasion if it causes issues, but keep others
     stealth.apply_stealth_sync(page)
+    
+    # Re-check after stealth
+    try:
+        is_webdriver = page.evaluate("navigator.webdriver")
+        logging.info(f"navigator.webdriver after stealth: {is_webdriver}")
+    except Exception as e:
+        logging.warning(f"Could not check navigator.webdriver: {e}")
 
     # Block media resources to prevent video player crash (TypeError: setMuted)
     page.route("**/*.{mp4,webm,mp3,wav,ogg}", lambda route: route.fulfill(status=200, body=b""))
@@ -87,13 +102,15 @@ def login(page, retry_count=0):
         # Human-like typing for email
         try:
             logging.info("Waiting before submitting...")
-            time.sleep(2)
+            # EXTRA DELAY FOR STEALTH
+            time.sleep(random.uniform(3.0, 6.0))
+            
             email_field = page.locator(email_selector)
             email_field.click()
             # Clear field just in case it is a retry and something is there (though page reload usually clears it)
             email_field.clear()
             # Use press_sequentially for reliable typing
-            email_field.press_sequentially(EMAIL, delay=100)
+            email_field.press_sequentially(EMAIL, delay=random.randint(100, 300)) # Slower typing
             logging.info("Email field filled.")
         except Exception as e:
             logging.error(f"Error interacting with email field: {e}")
@@ -320,25 +337,87 @@ def main():
 
     with sync_playwright() as p:
         # Launch browser (headless=False for debugging/visibility as requested)
-        browser = p.chromium.launch(headless=args.headless, args=["--enable-unsafe-swiftshader"])
+        browser = p.chromium.launch(
+            headless=args.headless,
+            args=[
+                "--enable-unsafe-swiftshader",
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-infobars",
+                "--window-position=0,0",
+                "--ignore-certifcate-errors",
+                "--ignore-certifcate-errors-spki-list",
+            ]
+        )
+        
+        # Load storage state if exists
+        state_file = "state.json"
+        storage_state = state_file if os.path.exists(state_file) else None
+        
+        if storage_state:
+            logging.info(f"Loading session from {state_file}")
+        else:
+            logging.info("No existing session found. Starting fresh.")
+
         context = browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+            storage_state=storage_state,
+            viewport={"width": 1280, "height": 720},
+            locale="en-US",
+            timezone_id="America/New_York"
         )
         page = context.new_page()
 
         # Debug: Listen for console logs immediately
-        page.on("console", lambda msg: logging.debug(f"CONSOLE: {msg.text}"))
+        page.on("console", lambda msg: logging.info(f"CONSOLE: {msg.type}: {msg.text}"))
+        page.on("pageerror", lambda exc: logging.error(f"PAGE ERROR: {exc}"))
 
         try:
-            login(page)
+            # Login only if needed (though existing login function navigates to login page, 
+            # if we have cookies we might be redirected to dashboard or we can check)
+            
+            # For now, we run login() which handles the flow. 
+            # If cookies are valid, accessing /login might redirect or show different UI.
+            # Ideally we check /dashboard first? 
+            # Let's keep it simple: try to go to dashboard first if we have state.
+            
+            if storage_state:
+                logging.info("Trying to access dashboard directly with saved state...")
+                page.goto("https://www.strava.com/dashboard")
+                time.sleep(3)
+                if "Log In" not in page.title() and "Login" not in page.title() and page.url.endswith("/dashboard"):
+                     logging.info("Session is valid! Skipping login.")
+                else:
+                     logging.info("Session expired or invalid. Proceeding to login.")
+                     login(page)
+            else:
+                login(page)
+            
+            # SAVE STATE after successful login (or interaction)
+            logging.info(f"Saving session to {state_file}...")
+            context.storage_state(path=state_file)
+            
             give_kudos(page)
 
-            # Keep browser open for a moment to see results
-            time.sleep(2)
+            # Finished successfully
+            logging.info("Process completed successfully.")
 
         except Exception as e:
             logging.error(f"An error occurred: {e}")
             page.screenshot(path="error.png")
+
+            # Keep browser open on error too to allow manual login
+            logging.info("An error occurred. Keeping browser open for 300s. PLEASE LOG IN MANUALLY NOW.")
+            time.sleep(300)
+            
+            # Save state after the wait, assuming user logged in
+            try:
+                logging.info(f"Saving session to {state_file} after manual intervention...")
+                context.storage_state(path=state_file)
+            except Exception as save_err:
+                logging.error(f"Failed to save state: {save_err}")
+                
         finally:
             browser.close()
 
